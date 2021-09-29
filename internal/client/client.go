@@ -7,7 +7,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const defaultPerPage = 1000
+const defaultPerPage = 100
 
 type Client struct {
 	g   *github.Client
