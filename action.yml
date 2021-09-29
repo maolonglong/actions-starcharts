@@ -1,0 +1,25 @@
+name: Starcharts Action
+description: Plot your repository stars over time.
+author: MaoLongLong <382084620@qq.com>
+branding:
+  icon: "bar-chart"
+  color: "blue"
+
+inputs:
+  github_token:
+    description: Your GitHub token for authentication.
+    required: true
+
+  svg_path:
+    description: Path to save the generated SVG.
+    required: false
+    default: STARCHARTS.svg
+
+  commit_message:
+    description: Commit message of the github action.
+    required: false
+    default: "chore: update starcharts [skip ci]"
+
+runs:
+  using: docker
+  image: Dockerfile

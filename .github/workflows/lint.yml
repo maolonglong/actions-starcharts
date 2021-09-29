@@ -1,0 +1,30 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - ".golangci.yml"
+      - ".github/workflows/go.yml"
+  pull_request:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - ".golangci.yml"
+      - ".github/workflows/go.yml"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: latest
+          args: --timeout=30m
