@@ -23,7 +23,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  update-readme:
+  starcharts:
     name: Generate starcharts
     runs-on: ubuntu-latest
     steps:
@@ -38,3 +38,10 @@ jobs:
 [doocs/leetcode](https://github.com/doocs/leetcode) Stars 趋势（2021-09-30 生成）
 
 ![](./images/doocs_leetcode_2021_09_30.svg)
+
+## TODO
+
+- [x] 修复由于 GitHub V3 API 分页限制，无法获取 40K stars 以上数据的问题
+- [ ] 部分操作仍然依赖 GitHub API V3，打算全部替换为 V4
+- [ ] 由于 Actions 中调用 V4 API 有 1000 的次数限制，所以它暂时只支持到 100K stars 的仓库
+- [ ] 为了文明使用 GitHub API，暂时没有使用多 goroutine，所以生成速度较慢
