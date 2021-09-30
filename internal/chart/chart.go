@@ -5,12 +5,12 @@ import (
 	"io"
 	"time"
 
-	"github.com/google/go-github/v39/github"
+	"github.com/maolonglong/actions-starcharts/internal/client"
 	"github.com/wcharczuk/go-chart"
 	"github.com/wcharczuk/go-chart/drawing"
 )
 
-func WriteStarsChart(stars []*github.Stargazer, w io.Writer) error {
+func WriteStarsChart(stars []client.Stargazer, w io.Writer) error {
 	var series = chart.TimeSeries{
 		Style: chart.Style{
 			Show: true,
@@ -24,7 +24,7 @@ func WriteStarsChart(stars []*github.Stargazer, w io.Writer) error {
 		},
 	}
 	for i, star := range stars {
-		series.XValues = append(series.XValues, star.StarredAt.Time)
+		series.XValues = append(series.XValues, star.StarredAt)
 		series.YValues = append(series.YValues, float64(i))
 	}
 	if len(series.XValues) < 2 {

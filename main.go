@@ -11,14 +11,14 @@ import (
 )
 
 func main() {
-	owner, repo := action.GetRepo()
+	owner, name := action.GetRepo()
 	sha := action.GetSHA()
 	token := action.GetInput("github_token")
 	svgPath := action.GetInput("svg_path")
 	commitMessage := action.GetInput("commit_message")
 
 	client := client.New(context.Background(), token)
-	stars, err := client.GetStargazers(owner, repo)
+	stars, err := client.GetStargazers(owner, name)
 	if err != nil {
 		log.Fatal("get stargazers failed: ", err.Error())
 	}
@@ -29,7 +29,7 @@ func main() {
 		log.Fatal("write stargazers chart failed: ", err.Error())
 	}
 
-	err = client.CreateOrUpdate(owner, repo, sha, svgPath, commitMessage, buf.Bytes())
+	err = client.CreateOrUpdate(owner, name, sha, svgPath, commitMessage, buf.Bytes())
 	if err != nil {
 		log.Fatal("update content failed: ", err.Error())
 	}

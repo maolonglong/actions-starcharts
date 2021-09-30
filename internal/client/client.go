@@ -2,22 +2,28 @@ package client
 
 import (
 	"context"
+	"net/http"
 
-	"github.com/google/go-github/v39/github"
+	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
 
-const defaultPerPage = 100
-
 type Client struct {
-	g   *github.Client
 	ctx context.Context
+	g   *githubv4.Client
+
+	// TODO: remove httpClient and github api v3
+	httpClient *http.Client
 }
 
 func New(ctx context.Context, token string) *Client {
-	ts := oauth2.StaticTokenSource(
+	src := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
-	tc := oauth2.NewClient(ctx, ts)
-	return &Client{g: github.NewClient(tc), ctx: ctx}
+	httpClient := oauth2.NewClient(ctx, src)
+	return &Client{
+		ctx:        ctx,
+		httpClient: httpClient,
+		g:          githubv4.NewClient(httpClient),
+	}
 }

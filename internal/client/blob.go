@@ -1,10 +1,10 @@
 package client
 
 import (
-	"bytes"
-	"encoding/base64"
+	"fmt"
 
 	"github.com/google/go-github/v39/github"
+	"github.com/shurcooL/githubv4"
 )
 
 func (c *Client) CreateOrUpdate(owner, repo, sha, path, message string, content []byte) error {
@@ -13,41 +13,32 @@ func (c *Client) CreateOrUpdate(owner, repo, sha, path, message string, content 
 		return err
 	}
 
-	if b != nil {
-		preContent, err := base64.StdEncoding.DecodeString(*b.Content)
-		if err != nil {
-			return err
-		}
-
-		if bytes.Equal(preContent, content) {
-			return nil
-		}
+	if b.Text == string(content) {
+		return nil
 	}
 
+	// TODO: replace with graphql API
 	opt := &github.RepositoryContentFileOptions{
 		Message: &message,
 		Content: content,
 	}
-	if b != nil {
-		opt.SHA = b.SHA
+	if b.Oid != "" {
+		opt.SHA = &b.Oid
 	}
-	_, _, err = c.g.Repositories.CreateFile(c.ctx, owner, repo, path, opt)
+	v3 := github.NewClient(c.httpClient)
+	_, _, err = v3.Repositories.CreateFile(c.ctx, owner, repo, path, opt)
 	return err
 }
 
-func (c *Client) getBlob(owner, repo, sha, path string) (*github.Blob, error) {
-	tree, _, err := c.g.Git.GetTree(c.ctx, owner, repo, sha, true)
+func (c *Client) getBlob(owner, repo, sha, path string) (Blob, error) {
+	var q getFileSHAQuery
+	err := c.g.Query(c.ctx, &q, map[string]interface{}{
+		"owner":      githubv4.String(owner),
+		"name":       githubv4.String(repo),
+		"expression": githubv4.String(fmt.Sprintf("%s:%s", sha, path)),
+	})
 	if err != nil {
-		return nil, err
+		return Blob{}, nil
 	}
-	for _, ent := range tree.Entries {
-		if *ent.Path == path {
-			blob, _, err := c.g.Git.GetBlob(c.ctx, owner, repo, ent.GetSHA())
-			if err != nil {
-				return nil, err
-			}
-			return blob, nil
-		}
-	}
-	return nil, nil
+	return q.Repository.Object.Blob, nil
 }

@@ -1,56 +1,37 @@
 package client
 
 import (
+	"log"
 	"sort"
-	"sync"
 
-	"github.com/google/go-github/v39/github"
-	"golang.org/x/sync/errgroup"
+	"github.com/shurcooL/githubv4"
 )
 
-func (c *Client) GetStargazers(owner, repo string) ([]*github.Stargazer, error) {
-	r, _, err := c.g.Repositories.Get(c.ctx, owner, repo)
-	if err != nil {
-		return nil, err
+func (c *Client) GetStargazers(owner, name string) ([]Stargazer, error) {
+	var q getStarsQuery
+
+	variables := map[string]interface{}{
+		"owner": githubv4.String(owner),
+		"name":  githubv4.String(name),
+		"after": (*githubv4.String)(nil),
 	}
 
-	stars := make([]*github.Stargazer, 0, r.GetStargazersCount())
-	var mu sync.Mutex
-	var g errgroup.Group
-	sem := make(chan struct{}, 4)
-
-	lastPage := getLastPage(r.GetStargazersCount(), defaultPerPage)
-	for page := 1; page <= lastPage; page++ {
-		sem <- struct{}{}
-		page := page
-		g.Go(func() error {
-			defer func() { <-sem }()
-			opt := &github.ListOptions{
-				Page:    page,
-				PerPage: defaultPerPage,
-			}
-			result, _, err := c.g.Activity.ListStargazers(c.ctx, owner, repo, opt)
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			stars = append(stars, result...)
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	err = g.Wait()
-	if err != nil {
-		return nil, err
+	var stars []Stargazer
+	for {
+		err := c.g.Query(c.ctx, &q, variables)
+		if err != nil {
+			return nil, err
+		}
+		stars = append(stars, q.Repository.Stargazers.Edges...)
+		log.Printf("get stargazers: completed=%v, ratelimit_remaining=%v", len(stars), q.RateLimit.Remaining)
+		if !q.Repository.Stargazers.PageInfo.HasNextPage {
+			break
+		}
+		variables["after"] = githubv4.NewString(q.Repository.Stargazers.PageInfo.EndCursor)
 	}
 
 	sort.Slice(stars, func(i, j int) bool {
-		return stars[i].StarredAt.Before(stars[j].StarredAt.Time)
+		return stars[i].StarredAt.Before(stars[j].StarredAt)
 	})
 	return stars, nil
-}
-
-func getLastPage(total, perPage int) int {
-	return (total + perPage - 1) / perPage
 }
