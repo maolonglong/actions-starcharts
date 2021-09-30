@@ -32,3 +32,9 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           svg_path: STARCHARTS.svg
 ```
+
+## 效果
+
+[doocs/leetcode](https://github.com/doocs/leetcode) Stars 趋势（2021-09-30 生成）
+
+![](./images/doocs_leetcode_2021_09_30.svg)
