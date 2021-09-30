@@ -7,6 +7,15 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
+func (c *Client) GetStarTotal(owner, name string) (int, error) {
+	var q getStarTotalQuery
+	err := c.g.Query(c.ctx, &q, map[string]interface{}{
+		"owner": githubv4.String(owner),
+		"name":  githubv4.String(name),
+	})
+	return q.Repository.Stargazers.TotalCount, err
+}
+
 func (c *Client) GetStargazers(owner, name string) ([]Stargazer, error) {
 	var q getStarsQuery
 

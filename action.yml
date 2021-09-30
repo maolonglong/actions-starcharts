@@ -20,6 +20,11 @@ inputs:
     required: false
     default: "chore: update starcharts [skip ci]"
 
+  stars_change:
+    description: Update only when the current stars has increased by at least stars_change since last time
+    required: false
+    default: "1"
+
 runs:
   using: docker
   image: Dockerfile

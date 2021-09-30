@@ -8,7 +8,7 @@ import (
 )
 
 func (c *Client) CreateOrUpdate(owner, repo, sha, path, message string, content []byte) error {
-	b, err := c.getBlob(owner, repo, sha, path)
+	b, err := c.GetBlob(owner, repo, sha, path)
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func (c *Client) CreateOrUpdate(owner, repo, sha, path, message string, content 
 	return err
 }
 
-func (c *Client) getBlob(owner, repo, sha, path string) (Blob, error) {
+func (c *Client) GetBlob(owner, repo, sha, path string) (Blob, error) {
 	var q getFileSHAQuery
 	err := c.g.Query(c.ctx, &q, map[string]interface{}{
 		"owner":      githubv4.String(owner),

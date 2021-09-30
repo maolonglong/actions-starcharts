@@ -62,3 +62,20 @@ type getFileSHAQuery struct {
 		} `graphql:"object(expression: $expression)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
+
+/*
+query GetStarTotal($name: String!, $owner: String!) {
+	repository(name: $name, owner: $owner) {
+		stargazers {
+			totalCount
+		}
+	}
+}
+*/
+type getStarTotalQuery struct {
+	Repository struct {
+		Stargazers struct {
+			TotalCount int
+		}
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
