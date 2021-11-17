@@ -3,7 +3,7 @@ module github.com/maolonglong/actions-starcharts
 go 1.17
 
 require (
-	github.com/google/go-github/v39 v39.1.0
+	github.com/google/go-github/v39 v39.2.0
 	github.com/sethvargo/go-githubactions v0.5.0
 	github.com/shurcooL/githubv4 v0.0.0-20210922025249-6831e00d857f
 	github.com/spf13/cast v1.4.1
