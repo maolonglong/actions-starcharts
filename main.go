@@ -28,13 +28,6 @@ func getRepo() (string, string) {
 	return a[0], a[1]
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func abs(a int) int {
 	if a < 0 {
 		return -a
@@ -62,7 +55,9 @@ func main() {
 	}
 
 	starsChange := cast.ToInt(githubactions.GetInput("stars_change"))
-	starsChange = min(1, starsChange)
+	if starsChange < 1 {
+		starsChange = 1
+	}
 
 	targetOwner, targetName := owner, name
 	repo := githubactions.GetInput("repo")
