@@ -16,6 +16,9 @@ on:
       - ".golangci.yml"
       - ".github/workflows/lint.yml"
 
+env:
+  GOPROXY: "https://proxy.golang.org"
+
 jobs:
   lint:
     name: Lint

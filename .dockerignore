@@ -1,0 +1,10 @@
+.git
+.github
+images
+.gitignore
+.golangci.yml
+action.yml
+Dockerfile
+LICENSE
+README.md
+slim.dockerfile
