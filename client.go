@@ -86,19 +86,29 @@ func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]starg
 		"after": (*githubv4.String)(nil),
 	}
 
+	first := true
+
 	var stars []stargazer
 	for {
 		err := c.v4.Query(ctx, &q, variables)
 		if err != nil {
 			return nil, err
 		}
+
+		if first {
+			githubactions.Infof("ratelimit_remaining: %v", q.RateLimit.Remaining)
+			first = false
+		}
+
 		stars = append(stars, q.Repository.Stargazers.Edges...)
-		githubactions.Debugf("get stargazers: completed=%v, ratelimit_remaining=%v", len(stars), q.RateLimit.Remaining)
+		githubactions.Infof("get stargazers: %v", len(stars))
 		if !q.Repository.Stargazers.PageInfo.HasNextPage {
 			break
 		}
 		variables["after"] = githubv4.NewString(q.Repository.Stargazers.PageInfo.EndCursor)
 	}
+
+	githubactions.Infof("ratelimit_remaining: %v", q.RateLimit.Remaining)
 
 	sort.Slice(stars, func(i, j int) bool {
 		return stars[i].StarredAt.Before(stars[j].StarredAt)
