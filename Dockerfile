@@ -1,16 +1,10 @@
-FROM golang:1.17 as builder
+FROM golang:1.13
 
-ENV GO111MODULE=on \
-    GOPROXY=https://proxy.golang.org \
-    CGO_ENABLED=0
-
-WORKDIR /build
+WORKDIR /src
 COPY . .
-RUN go mod download
-RUN go build -ldflags="-w -s" -o starcharts
 
-FROM alpine:3.14
+ENV GO111MODULE=on
 
-COPY --from=builder /build/starcharts /starcharts
+RUN go build -o /bin/action
 
-ENTRYPOINT [ "/starcharts" ]
+ENTRYPOINT ["/bin/action"]
