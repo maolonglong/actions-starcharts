@@ -63,10 +63,20 @@ func main() {
 	starsChange := cast.ToInt(githubactions.GetInput("stars_change"))
 	starsChange = min(1, starsChange)
 
+	targetOwner, targetName := owner, name
+	repo := githubactions.GetInput("repo")
+	if repo != "" {
+		a := strings.SplitN(repo, "/", 2)
+		if len(a) != 2 {
+			githubactions.Fatalf("invalid repo: %v", repo)
+		}
+		targetOwner, targetName = a[0], a[1]
+	}
+
 	ctx := context.TODO()
 	cli := newClient(token)
 
-	cur, err := cli.getStarsCount(ctx, owner, name)
+	cur, err := cli.getStarsCount(ctx, targetOwner, targetName)
 	if err != nil {
 		githubactions.Fatalf("failed to get stars count: %v", err)
 	}
@@ -89,7 +99,7 @@ func main() {
 		}
 	}
 
-	stars, err := cli.getStargazers(ctx, owner, name)
+	stars, err := cli.getStargazers(ctx, targetOwner, targetName)
 	if err != nil {
 		githubactions.Fatalf("failed to get stargazers: %v", err)
 	}

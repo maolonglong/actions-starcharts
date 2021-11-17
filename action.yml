@@ -25,6 +25,11 @@ inputs:
     required: false
     default: "1"
 
+  repo:
+    description: Generate starcharts for other repository
+    required: false
+    default: ""
+
 runs:
   using: docker
   image: Dockerfile

@@ -4,12 +4,13 @@
 
 ## 入参
 
-|       参数       |             描述              | 是否必传 |                默认值                |
-| :--------------: | :---------------------------: | :------: | :----------------------------------: |
-|  `github_token`  |  用于提交时身份验证的 token   |    是    |                                      |
-|    `svg_path`    |        星图的保存路径         |    否    |           `STARCHARTS.svg`           |
-| `commit_message` |           提交信息            |    否    | `chore: update starcharts [skip ci]` |
-|  `stars_change`  | 更新至少需要的 stars 数变化值 |    否    |                 `1`                  |
+|       参数       |             描述              | 是否必传 |                 默认值                 |
+| :--------------: | :---------------------------: | :------: | :------------------------------------: |
+|  `github_token`  |  用于提交时身份验证的 token   |    是    |                                        |
+|    `svg_path`    |        星图的保存路径         |    否    |           `"STARCHARTS.svg"`           |
+| `commit_message` |           提交信息            |    否    | `"chore: update starcharts [skip ci]"` |
+|  `stars_change`  | 更新至少需要的 stars 数变化值 |    否    |                 `"1"`                  |
+|      `repo`      |      生成其他仓库的星图       |    否    |                  `""`                  |
 
 ## 示例
 
@@ -31,7 +32,9 @@ jobs:
       - uses: MaoLongLong/actions-starcharts@main
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          svg_path: STARCHARTS.svg
+          svg_path: images/starcharts.svg
+          # stars_change: "100"
+          # repo: "doocs/advanced-java"
 ```
 
 ## 效果
