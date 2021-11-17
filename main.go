@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -91,12 +92,16 @@ func main() {
 	}
 
 	if b != nil {
+		log.Println("b != nil")
+		fmt.Println(string(*b.Content))
 		var old int
 		fmt.Sscanf(string(*b.Content), "<!-- stars: %d -->", &old)
-		githubactions.Infof("old_stars=%d, cur_stars=%d\n", old, cur)
+		githubactions.Infof("old_stars=%d cur_stars=%d\n", old, cur)
+		log.Printf("cur=%d old=%d", cur, old)
 		if abs(cur-old) < starsChange {
 			os.Exit(0)
 		}
+		os.Exit(0)
 	}
 
 	stars, err := cli.getStargazers(ctx, targetOwner, targetName)
