@@ -3,65 +3,124 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
+	"strings"
 
-	"github.com/maolonglong/actions-starcharts/internal/action"
-	"github.com/maolonglong/actions-starcharts/internal/chart"
-	"github.com/maolonglong/actions-starcharts/internal/client"
+	"github.com/sethvargo/go-githubactions"
 	"github.com/spf13/cast"
 )
 
-func main() {
-	owner, name := action.GetRepo()
-	sha := action.GetSHA()
-	token := action.GetInput("github_token")
-	svgPath := action.GetInput("svg_path")
-	commitMessage := action.GetInput("commit_message")
+func getSHA() string {
+	s := os.Getenv("GITHUB_SHA")
+	if s == "" {
+		githubactions.Fatalf("failed to get SHA\n")
+	}
+	return s
+}
 
-	starsChange := cast.ToInt(action.GetInput("stars_change"))
-	if starsChange < 1 {
-		starsChange = 1
+func getRepo() (string, string) {
+	a := strings.SplitN(os.Getenv("GITHUB_REPOSITORY"), "/", 2)
+	if len(a) != 2 || a[0] == "" || a[1] == "" {
+		githubactions.Fatalf("failed to get repo\n")
+	}
+	return a[0], a[1]
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func abs(a int) int {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+func main() {
+	owner, name := getRepo()
+	sha := getSHA()
+
+	token := githubactions.GetInput("github_token")
+	if token == "" {
+		githubactions.Fatalf("missing input 'github_token'\n")
 	}
 
-	client := client.New(context.Background(), token)
+	svgPath := githubactions.GetInput("svg_path")
+	if svgPath == "" {
+		svgPath = "STARCHARTS.svg"
+	}
 
-	cur, err := client.GetStarTotal(owner, name)
+	commitMessage := githubactions.GetInput("commit_message")
+	if commitMessage == "" {
+		commitMessage = "chore: update starcharts [skip ci]"
+	}
+
+	starsChange := cast.ToInt(githubactions.GetInput("stars_change"))
+	starsChange = min(1, starsChange)
+
+	targetOwner, targetName := owner, name
+	repo := githubactions.GetInput("repo")
+	if repo != "" {
+		a := strings.SplitN(repo, "/", 2)
+		if len(a) != 2 {
+			githubactions.Fatalf("invalid repo: %v\n", repo)
+		}
+		targetOwner, targetName = a[0], a[1]
+	}
+
+	ctx := context.TODO()
+	cli := newClient(token)
+
+	cur, err := cli.getStarsCount(ctx, targetOwner, targetName)
 	if err != nil {
-		log.Fatal("get stars total count failed: ", err.Error())
+		githubactions.Fatalf("failed to get stars count: %v\n", err)
 	}
 	if cur == 0 {
-		log.Println("not enough stars")
+		githubactions.Warningf("not enough stars\n")
 		os.Exit(0)
 	}
 
-	b, err := client.GetBlob(owner, name, sha, svgPath)
+	b, err := cli.getBlob(ctx, owner, name, sha, svgPath)
 	if err != nil {
-		log.Fatal("get blob failed: ", err.Error())
+		githubactions.Fatalf("failed to get blob: %v\n", err)
 	}
 
-	var old int
-	fmt.Sscanf(b.Text, "<!-- stars: %d -->", &old)
-	log.Printf("old stars: %v, cur stars: %v", old, cur)
-	if abs(cur-old) < starsChange {
-		os.Exit(0)
+	if b != nil {
+		preContent, err := base64.StdEncoding.DecodeString(*b.Content)
+		if err != nil {
+			githubactions.Fatalf("failed to decode base64 string: %v\n", err)
+		}
+
+		var old int
+		fmt.Sscanf(string(preContent), "<!-- stars: %d -->", &old)
+		githubactions.Infof("old_stars=%d cur_stars=%d\n", old, cur)
+		if abs(cur-old) < starsChange {
+			os.Exit(0)
+		}
 	}
 
-	stars, err := client.GetStargazers(owner, name)
+	stars, err := cli.getStargazers(ctx, targetOwner, targetName)
 	if err != nil {
-		log.Fatal("get stargazers failed: ", err.Error())
+		githubactions.Fatalf("failed to get stargazers: %v\n", err)
 	}
 
 	buf := new(bytes.Buffer)
 	buf.WriteString(fmt.Sprintf("<!-- stars: %d -->\n", len(stars)))
-	err = chart.WriteStarsChart(stars, buf)
+	err = writeStarsChart(stars, buf)
 	if err != nil {
-		log.Fatal("write stargazers chart failed: ", err.Error())
+		githubactions.Fatalf("failed to write svg: %v\n", err)
 	}
 
-	err = client.CreateOrUpdate(owner, name, sha, svgPath, commitMessage, buf.Bytes())
+	err = cli.createOrUpdate(ctx, owner, name, sha, svgPath, commitMessage, b, buf.Bytes())
 	if err != nil {
-		log.Fatal("update content failed: ", err.Error())
+		githubactions.Fatalf("failed to update content: %v\n", err)
 	}
+
+	githubactions.Infof("update success!\n")
 }

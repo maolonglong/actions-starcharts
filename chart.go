@@ -1,16 +1,15 @@
-package chart
+package main
 
 import (
 	"fmt"
 	"io"
 	"time"
 
-	"github.com/maolonglong/actions-starcharts/internal/client"
 	"github.com/wcharczuk/go-chart"
 	"github.com/wcharczuk/go-chart/drawing"
 )
 
-func WriteStarsChart(stars []client.Stargazer, w io.Writer) error {
+func writeStarsChart(stars []stargazer, w io.Writer) error {
 	var series = chart.TimeSeries{
 		Style: chart.Style{
 			Show: true,
@@ -60,13 +59,13 @@ func WriteStarsChart(stars []client.Stargazer, w io.Writer) error {
 					A: 255,
 				},
 			},
-			ValueFormatter: IntValueFormatter,
+			ValueFormatter: intValueFormatter,
 		},
 		Series: []chart.Series{series},
 	}
 	return graph.Render(chart.SVG, w)
 }
 
-func IntValueFormatter(v interface{}) string {
+func intValueFormatter(v interface{}) string {
 	return fmt.Sprintf("%.0f", v)
 }
