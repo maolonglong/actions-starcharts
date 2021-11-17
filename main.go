@@ -4,64 +4,107 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"os"
+	"strings"
 
-	"github.com/maolonglong/actions-starcharts/internal/action"
-	"github.com/maolonglong/actions-starcharts/internal/chart"
-	"github.com/maolonglong/actions-starcharts/internal/client"
+	"github.com/sethvargo/go-githubactions"
 	"github.com/spf13/cast"
 )
 
-func main() {
-	owner, name := action.GetRepo()
-	sha := action.GetSHA()
-	token := action.GetInput("github_token")
-	svgPath := action.GetInput("svg_path")
-	commitMessage := action.GetInput("commit_message")
+func getSHA() string {
+	s := os.Getenv("GITHUB_SHA")
+	if s == "" {
+		githubactions.Fatalf("failed to get SHA")
+	}
+	return s
+}
 
-	starsChange := cast.ToInt(action.GetInput("stars_change"))
-	if starsChange < 1 {
-		starsChange = 1
+func getRepo() (string, string) {
+	a := strings.SplitN(os.Getenv("GITHUB_REPOSITORY"), "/", 2)
+	if len(a) != 2 || a[0] == "" || a[1] == "" {
+		githubactions.Fatalf("failed to get repo")
+	}
+	return a[0], a[1]
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func abs(a int) int {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+func main() {
+	owner, name := getRepo()
+	sha := getSHA()
+
+	token := githubactions.GetInput("github_token")
+	if token == "" {
+		githubactions.Fatalf("missing input 'github_token'")
 	}
 
-	client := client.New(context.Background(), token)
+	svgPath := githubactions.GetInput("svg_path")
+	if svgPath == "" {
+		svgPath = "STARCHARTS.svg"
+	}
 
-	cur, err := client.GetStarTotal(owner, name)
+	commitMessage := githubactions.GetInput("commit_message")
+	if commitMessage == "" {
+		commitMessage = "chore: update starcharts [skip ci]"
+	}
+
+	starsChange := cast.ToInt(githubactions.GetInput("stars_change"))
+	starsChange = min(1, starsChange)
+
+	ctx := context.TODO()
+	cli := newClient(token)
+
+	cur, err := cli.getStarsCount(ctx, owner, name)
 	if err != nil {
-		log.Fatal("get stars total count failed: ", err.Error())
+		githubactions.Fatalf("failed to get stars count: %v", err)
 	}
 	if cur == 0 {
-		log.Println("not enough stars")
+		githubactions.Warningf("not enough stars")
 		os.Exit(0)
 	}
 
-	b, err := client.GetBlob(owner, name, sha, svgPath)
+	b, err := cli.getBlob(ctx, owner, name, sha, svgPath)
 	if err != nil {
-		log.Fatal("get blob failed: ", err.Error())
+		githubactions.Fatalf("failed to get blob: %v", err)
 	}
 
-	var old int
-	fmt.Sscanf(b.Text, "<!-- stars: %d -->", &old)
-	log.Printf("old stars: %v, cur stars: %v", old, cur)
-	if abs(cur-old) < starsChange {
-		os.Exit(0)
+	if b != nil {
+		var old int
+		fmt.Sscanf(string(*b.Content), "<!-- stars: %d -->", &old)
+		githubactions.Infof("old stars: %v, cur stars: %v", old, cur)
+		if abs(cur-old) < starsChange {
+			os.Exit(0)
+		}
 	}
 
-	stars, err := client.GetStargazers(owner, name)
+	stars, err := cli.getStargazers(ctx, owner, name)
 	if err != nil {
-		log.Fatal("get stargazers failed: ", err.Error())
+		githubactions.Fatalf("failed to get stargazers: %v", err)
 	}
 
 	buf := new(bytes.Buffer)
 	buf.WriteString(fmt.Sprintf("<!-- stars: %d -->\n", len(stars)))
-	err = chart.WriteStarsChart(stars, buf)
+	err = writeStarsChart(stars, buf)
 	if err != nil {
-		log.Fatal("write stargazers chart failed: ", err.Error())
+		githubactions.Fatalf("failed to write svg: %v", err)
 	}
 
-	err = client.CreateOrUpdate(owner, name, sha, svgPath, commitMessage, buf.Bytes())
+	err = cli.createOrUpdate(ctx, owner, name, sha, svgPath, commitMessage, b, buf.Bytes())
 	if err != nil {
-		log.Fatal("update content failed: ", err.Error())
+		githubactions.Fatalf("failed to update content: %v", err)
 	}
+
+	githubactions.Infof("update success!")
 }
