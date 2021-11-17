@@ -97,9 +97,9 @@ func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]starg
 		}
 
 		if first {
-			githubactions.Infof("ratelimit_remaining: %v, reset_at: %v\n",
+			githubactions.Infof("ratelimit_remaining=%d, reset_at=\"%s\"\n",
 				q.RateLimit.Remaining, q.RateLimit.ResetAt.Format(time.RFC1123))
-			githubactions.Infof("get stargazers...")
+			githubactions.Infof("get stargazers...\n")
 			first = false
 		}
 
@@ -110,7 +110,7 @@ func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]starg
 		variables["after"] = githubv4.NewString(q.Repository.Stargazers.PageInfo.EndCursor)
 	}
 
-	githubactions.Infof("ratelimit_remaining: %v, reset_at: %v\n",
+	githubactions.Infof("ratelimit_remaining=%d, reset_at=\"%s\"\n",
 		q.RateLimit.Remaining, q.RateLimit.ResetAt.Format(time.RFC1123))
 
 	sort.Slice(stars, func(i, j int) bool {

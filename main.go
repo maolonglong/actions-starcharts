@@ -93,7 +93,7 @@ func main() {
 	if b != nil {
 		var old int
 		fmt.Sscanf(string(*b.Content), "<!-- stars: %d -->", &old)
-		githubactions.Infof("old stars: %v, cur stars: %v\n", old, cur)
+		githubactions.Infof("old_stars=%d, cur_stars=%d\n", old, cur)
 		if abs(cur-old) < starsChange {
 			os.Exit(0)
 		}
