@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"sort"
 	"time"
 
@@ -120,8 +122,15 @@ func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]starg
 }
 
 func (c *client) createOrUpdate(ctx context.Context, owner, repo, sha, path, message string, blob *github.Blob, content []byte) error {
-	if blob != nil && *blob.Content == string(content) {
-		return nil
+	if blob != nil {
+		preContent, err := base64.StdEncoding.DecodeString(*blob.Content)
+		if err != nil {
+			return err
+		}
+
+		if bytes.Equal(preContent, content) {
+			return nil
+		}
 	}
 
 	opt := &github.RepositoryContentFileOptions{

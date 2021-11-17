@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -92,16 +92,17 @@ func main() {
 	}
 
 	if b != nil {
-		log.Println("b != nil")
-		fmt.Println(string(*b.Content))
+		preContent, err := base64.StdEncoding.DecodeString(*b.Content)
+		if err != nil {
+			githubactions.Fatalf("failed to decode base64 string: %v\n", err)
+		}
+
 		var old int
-		fmt.Sscanf(string(*b.Content), "<!-- stars: %d -->", &old)
+		fmt.Sscanf(string(preContent), "<!-- stars: %d -->", &old)
 		githubactions.Infof("old_stars=%d cur_stars=%d\n", old, cur)
-		log.Printf("cur=%d old=%d", cur, old)
 		if abs(cur-old) < starsChange {
 			os.Exit(0)
 		}
-		os.Exit(0)
 	}
 
 	stars, err := cli.getStargazers(ctx, targetOwner, targetName)
