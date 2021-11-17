@@ -32,6 +32,8 @@ jobs:
       - uses: MaoLongLong/actions-starcharts@main
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # 自定义 token 减少被限流的可能
+          # github_token: ${{ secrets.GH_TOKEN }}
           svg_path: images/starcharts.svg
           # stars_change: "100"
           # repo: "doocs/advanced-java"
@@ -46,6 +48,6 @@ jobs:
 ## TODO
 
 - [x] 修复由于 GitHub V3 API 分页限制，无法获取 40K stars 以上数据的问题
-- [ ] 部分操作仍然依赖 GitHub API V3，打算全部替换为 V4
-- [ ] 由于 Actions 中调用 V4 API 有 1000 的次数限制，所以它暂时只支持到 100K stars 的仓库
+- [x] ~~部分操作仍然依赖 GitHub API V3，打算全部替换为 V4~~ 还是 v3 用的顺手点，所以暂时就 `getStargazers()` 用的 v4
+- [x] ~~由于 Actions 中调用 V4 API 有 1000 的次数限制，所以它暂时只支持到 100K stars 的仓库~~ 用[自定义 token](https://github.com/settings/tokens/new?scopes=repo&description=starcharts)解决
 - [ ] 为了文明使用 GitHub API，暂时没有使用多 goroutine，所以生成速度较慢
