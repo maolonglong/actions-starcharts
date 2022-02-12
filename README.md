@@ -41,6 +41,10 @@ jobs:
 
 ## 效果
 
+[doocs/advanced-java](https://github.com/doocs/advanced-java) Stars 趋势
+
+![](./images/starcharts.svg)
+
 [doocs/leetcode](https://github.com/doocs/leetcode) Stars 趋势（2021-09-30 生成）
 
 ![](./images/doocs_leetcode_2021_09_30.svg)

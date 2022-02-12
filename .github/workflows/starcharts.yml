@@ -1,0 +1,20 @@
+name: Starcharts
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"
+  workflow_dispatch:
+
+jobs:
+  starcharts:
+    name: Generate starcharts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MaoLongLong/actions-starcharts@main
+        with:
+          # github_token: ${{ secrets.GITHUB_TOKEN }}
+          # 自定义 token 减少被限流的可能
+          github_token: ${{ secrets.GH_TOKEN }}
+          svg_path: images/starcharts.svg
+          stars_change: "100"
+          repo: "doocs/advanced-java"
