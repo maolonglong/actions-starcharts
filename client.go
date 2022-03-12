@@ -76,44 +76,42 @@ type getStarsQuery struct {
 	} `graphql:"repository(owner: $owner, name: $name)"`
 	RateLimit struct {
 		Remaining int
-		ResetAt   time.Time
 	}
 }
 
 func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]stargazer, error) {
-	var q getStarsQuery
+	var (
+		q      getStarsQuery
+		params = map[string]interface{}{
+			"owner": githubv4.String(owner),
+			"name":  githubv4.String(repo),
+			"after": (*githubv4.String)(nil),
+		}
+		stars []stargazer
+		last  time.Time
+	)
 
-	variables := map[string]interface{}{
-		"owner": githubv4.String(owner),
-		"name":  githubv4.String(repo),
-		"after": (*githubv4.String)(nil),
-	}
-
-	first := true
-
-	var stars []stargazer
 	for {
-		err := c.v4.Query(ctx, &q, variables)
+		err := c.v4.Query(ctx, &q, params)
 		if err != nil {
 			return nil, err
 		}
 
-		if first {
-			githubactions.Infof("ratelimit_remaining=%d reset_at=\"%s\"\n",
-				q.RateLimit.Remaining, q.RateLimit.ResetAt.Format(time.RFC1123))
-			githubactions.Infof("get stargazers...\n")
-			first = false
+		stars = append(stars, q.Repository.Stargazers.Edges...)
+		if last.IsZero() || time.Since(last) > 2*time.Second {
+			githubactions.Infof("fetching: count=%d ratelimit_remaining=%d",
+				len(stars), q.RateLimit.Remaining)
+			last = time.Now()
 		}
 
-		stars = append(stars, q.Repository.Stargazers.Edges...)
 		if !q.Repository.Stargazers.PageInfo.HasNextPage {
 			break
 		}
-		variables["after"] = githubv4.NewString(q.Repository.Stargazers.PageInfo.EndCursor)
+		params["after"] = githubv4.NewString(q.Repository.Stargazers.PageInfo.EndCursor)
 	}
 
-	githubactions.Infof("ratelimit_remaining=%d reset_at=\"%s\"\n",
-		q.RateLimit.Remaining, q.RateLimit.ResetAt.Format(time.RFC1123))
+	githubactions.Infof("completed: count=%d ratelimit_remaining=%d",
+		len(stars), q.RateLimit.Remaining)
 
 	sort.Slice(stars, func(i, j int) bool {
 		return stars[i].StarredAt.Before(stars[j].StarredAt)

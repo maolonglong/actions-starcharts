@@ -15,7 +15,7 @@ import (
 func getSHA() string {
 	s := os.Getenv("GITHUB_SHA")
 	if s == "" {
-		githubactions.Fatalf("failed to get SHA\n")
+		githubactions.Fatalf("failed to get SHA")
 	}
 	return s
 }
@@ -23,7 +23,7 @@ func getSHA() string {
 func getRepo() (string, string) {
 	a := strings.SplitN(os.Getenv("GITHUB_REPOSITORY"), "/", 2)
 	if len(a) != 2 || a[0] == "" || a[1] == "" {
-		githubactions.Fatalf("failed to get repo\n")
+		githubactions.Fatalf("failed to get repo")
 	}
 	return a[0], a[1]
 }
@@ -41,7 +41,7 @@ func main() {
 
 	token := githubactions.GetInput("github_token")
 	if token == "" {
-		githubactions.Fatalf("missing input 'github_token'\n")
+		githubactions.Fatalf("missing input 'github_token'")
 	}
 
 	svgPath := githubactions.GetInput("svg_path")
@@ -64,7 +64,7 @@ func main() {
 	if repo != "" {
 		a := strings.SplitN(repo, "/", 2)
 		if len(a) != 2 {
-			githubactions.Fatalf("invalid repo: %v\n", repo)
+			githubactions.Fatalf("invalid repo: %v", repo)
 		}
 		targetOwner, targetName = a[0], a[1]
 	}
@@ -74,27 +74,27 @@ func main() {
 
 	cur, err := cli.getStarsCount(ctx, targetOwner, targetName)
 	if err != nil {
-		githubactions.Fatalf("failed to get stars count: %v\n", err)
+		githubactions.Fatalf("failed to get stars count: %v", err)
 	}
 	if cur == 0 {
-		githubactions.Warningf("not enough stars\n")
+		githubactions.Warningf("not enough stars")
 		os.Exit(0)
 	}
 
 	b, err := cli.getBlob(ctx, owner, name, sha, svgPath)
 	if err != nil {
-		githubactions.Fatalf("failed to get blob: %v\n", err)
+		githubactions.Fatalf("failed to get blob: %v", err)
 	}
 
 	if b != nil {
 		preContent, err := base64.StdEncoding.DecodeString(*b.Content)
 		if err != nil {
-			githubactions.Fatalf("failed to decode base64 string: %v\n", err)
+			githubactions.Fatalf("failed to decode base64 string: %v", err)
 		}
 
 		var old int
 		fmt.Sscanf(string(preContent), "<!-- stars: %d -->", &old)
-		githubactions.Infof("old_stars=%d cur_stars=%d\n", old, cur)
+		githubactions.Infof("stars_old=%d stars_cur=%d", old, cur)
 		if abs(cur-old) < starsChange {
 			os.Exit(0)
 		}
@@ -102,20 +102,20 @@ func main() {
 
 	stars, err := cli.getStargazers(ctx, targetOwner, targetName)
 	if err != nil {
-		githubactions.Fatalf("failed to get stargazers: %v\n", err)
+		githubactions.Fatalf("failed to get stargazers: %v", err)
 	}
 
 	buf := new(bytes.Buffer)
 	buf.WriteString(fmt.Sprintf("<!-- stars: %d -->\n", len(stars)))
 	err = writeStarsChart(stars, buf)
 	if err != nil {
-		githubactions.Fatalf("failed to write svg: %v\n", err)
+		githubactions.Fatalf("failed to write svg: %v", err)
 	}
 
 	err = cli.createOrUpdate(ctx, owner, name, sha, svgPath, commitMessage, b, buf.Bytes())
 	if err != nil {
-		githubactions.Fatalf("failed to update content: %v\n", err)
+		githubactions.Fatalf("failed to update content: %v", err)
 	}
 
-	githubactions.Infof("update success!\n")
+	githubactions.Infof("update success!")
 }
