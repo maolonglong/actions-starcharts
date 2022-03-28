@@ -6,34 +6,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/sethvargo/go-githubactions"
-	"github.com/spf13/cast"
 )
-
-func getSHA() string {
-	s := os.Getenv("GITHUB_SHA")
-	if s == "" {
-		githubactions.Fatalf("failed to get SHA")
-	}
-	return s
-}
-
-func getRepo() (string, string) {
-	a := strings.SplitN(os.Getenv("GITHUB_REPOSITORY"), "/", 2)
-	if len(a) != 2 || a[0] == "" || a[1] == "" {
-		githubactions.Fatalf("failed to get repo")
-	}
-	return a[0], a[1]
-}
-
-func abs(a int) int {
-	if a < 0 {
-		return -a
-	}
-	return a
-}
 
 func main() {
 	owner, name := getRepo()
@@ -54,7 +31,10 @@ func main() {
 		commitMessage = "chore: update starcharts [skip ci]"
 	}
 
-	starsChange := cast.ToInt(githubactions.GetInput("stars_change"))
+	starsChange, err := strconv.Atoi(githubactions.GetInput("stars_change"))
+	if err != nil {
+		githubactions.Fatalf("invalid input 'stars_change'")
+	}
 	if starsChange < 1 {
 		starsChange = 1
 	}
@@ -118,4 +98,20 @@ func main() {
 	}
 
 	githubactions.Infof("update success!")
+}
+
+func getSHA() string {
+	return os.Getenv("GITHUB_SHA")
+}
+
+func getRepo() (string, string) {
+	owner, name, _ := strings.Cut(os.Getenv("GITHUB_REPOSITORY"), "/")
+	return owner, name
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

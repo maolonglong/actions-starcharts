@@ -1,10 +1,16 @@
-FROM golang:1.17
+FROM golang:1.18-alpine3.15 AS build-env
 
-WORKDIR /src
+ENV GO111MODULE=on \
+    CGO_ENABLED=0 \
+    GOPROXY=https://proxy.golang.org
+
+WORKDIR /go/src/go.chensl.me/actions-starcharts
 COPY . .
 
-ENV GO111MODULE=on
+RUN go build -o /go/bin/actions-starcharts -trimpath -buildvcs=false -ldflags="-s -w" .
 
-RUN go build -o /bin/action
+FROM gcr.io/distroless/static
 
-ENTRYPOINT ["/bin/action"]
+COPY --from=build-env /go/bin/actions-starcharts /
+
+ENTRYPOINT [ "/actions-starcharts" ]
