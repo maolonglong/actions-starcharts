@@ -119,7 +119,7 @@ func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]starg
 	return stars, nil
 }
 
-func (c *client) createOrUpdate(ctx context.Context, owner, repo, sha, path, message string, blob *github.Blob, content []byte) error {
+func (c *client) createOrUpdate(ctx context.Context, owner, repo, path, message string, blob *github.Blob, content []byte) error {
 	if blob != nil {
 		preContent, err := base64.StdEncoding.DecodeString(*blob.Content)
 		if err != nil {

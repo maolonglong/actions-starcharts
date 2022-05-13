@@ -32,4 +32,4 @@ inputs:
 
 runs:
   using: docker
-  image: slim.dockerfile
+  image: Dockerfile

@@ -1,10 +1,18 @@
-FROM golang:1.17
+FROM golang:1.17-alpine AS builder
+
+ENV GO111MODULE=on \
+    CGO_ENABLED=0 \
+    GOPROXY=https://proxy.golang.org
 
 WORKDIR /src
 COPY . .
 
-ENV GO111MODULE=on
+RUN go build -o /bin/action -ldflags "-w -s"
 
-RUN go build -o /bin/action
+FROM scratch
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+COPY --from=builder /bin/action /bin/action
 
 ENTRYPOINT ["/bin/action"]
