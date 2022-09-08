@@ -10,7 +10,7 @@ import (
 )
 
 func writeStarsChart(stars []stargazer, w io.Writer) error {
-	var series = chart.TimeSeries{
+	series := chart.TimeSeries{
 		Style: chart.Style{
 			Show: true,
 			StrokeColor: drawing.Color{
@@ -31,7 +31,7 @@ func writeStarsChart(stars []stargazer, w io.Writer) error {
 		series.YValues = append(series.YValues, 1)
 	}
 
-	var graph = chart.Chart{
+	graph := chart.Chart{
 		XAxis: chart.XAxis{
 			Name:      "Time",
 			NameStyle: chart.StyleShow(),
@@ -66,6 +66,6 @@ func writeStarsChart(stars []stargazer, w io.Writer) error {
 	return graph.Render(chart.SVG, w)
 }
 
-func intValueFormatter(v interface{}) string {
+func intValueFormatter(v any) string {
 	return fmt.Sprintf("%.0f", v)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"sort"
 	"time"
 
@@ -82,7 +83,7 @@ type getStarsQuery struct {
 func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]stargazer, error) {
 	var (
 		q      getStarsQuery
-		params = map[string]interface{}{
+		params = map[string]any{
 			"owner": githubv4.String(owner),
 			"name":  githubv4.String(repo),
 			"after": (*githubv4.String)(nil),
@@ -90,6 +91,8 @@ func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]starg
 		stars []stargazer
 		last  time.Time
 	)
+
+	githubactions.Group(fmt.Sprintf("getStargazers(%q, %q)", owner, repo))
 
 	for {
 		err := c.v4.Query(ctx, &q, params)
@@ -112,6 +115,8 @@ func (c *client) getStargazers(ctx context.Context, owner, repo string) ([]starg
 
 	githubactions.Infof("completed: count=%d ratelimit_remaining=%d",
 		len(stars), q.RateLimit.Remaining)
+
+	githubactions.EndGroup()
 
 	sort.Slice(stars, func(i, j int) bool {
 		return stars[i].StarredAt.Before(stars[j].StarredAt)

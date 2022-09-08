@@ -22,13 +22,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/sethvargo/go-envconfig"
 )
 
 var (
@@ -41,10 +43,8 @@ const (
 	setOutputCmd = "set-output"
 	saveStateCmd = "save-state"
 
-	addPathCmd = "add-path" // used when issuing the regular command
-	pathCmd    = "path"     // used when issuing the file command
+	pathCmd = "path" // used when issuing the file command
 
-	setEnvCmd       = "set-env"                          // used when issuing the regular command
 	envCmd          = "env"                              // used when issuing the file command
 	envCmdMsgFmt    = "%s<<%s" + EOF + "%s" + EOF + "%s" // ${name}<<${delimiter}${os.EOL}${convertedVal}${os.EOL}${delimiter}
 	envCmdDelimiter = "_GitHubActionsFileCommandDelimeter_"
@@ -54,6 +54,8 @@ const (
 
 	groupCmd    = "group"
 	endGroupCmd = "endgroup"
+
+	stepSummaryCmd = "step-summary"
 
 	debugCmd   = "debug"
 	noticeCmd  = "notice"
@@ -84,15 +86,6 @@ func New(opts ...Option) *Action {
 	return a
 }
 
-// NewWithWriter creates a wrapper using the given writer. This is useful for
-// tests. The given writer cannot add any prefixes to the string, since GitHub
-// requires these special strings to match a very particular format.
-//
-// Deprecated: Use New() with WithWriter instead.
-func NewWithWriter(w io.Writer) *Action {
-	return New(WithWriter(w))
-}
-
 // Action is an internal wrapper around GitHub Actions' output and magic
 // strings.
 type Action struct {
@@ -102,12 +95,16 @@ type Action struct {
 	httpClient *http.Client
 }
 
-// IssueCommand issues a new GitHub actions Command.
+// IssueCommand issues a new GitHub actions Command. It panics if it cannot
+// write to the output stream.
 func (c *Action) IssueCommand(cmd *Command) {
-	fmt.Fprint(c.w, cmd.String()+EOF)
+	if _, err := fmt.Fprint(c.w, cmd.String()+EOF); err != nil {
+		panic(fmt.Errorf("failed to issue command: %w", err))
+	}
 }
 
 // IssueFileCommand issues a new GitHub actions Command using environment files.
+// It panics if writing to the file fails.
 //
 // https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-commands-for-github-actions#environment-files
 //
@@ -118,7 +115,15 @@ func (c *Action) IssueCommand(cmd *Command) {
 // IssueFileCommand currently ignores the 'CommandProperties' field provided
 // with the 'Command' argument as it's scope is unclear in the current
 // TypeScript implementation.
-func (c *Action) IssueFileCommand(cmd *Command) error {
+func (c *Action) IssueFileCommand(cmd *Command) {
+	if err := c.issueFileCommand(cmd); err != nil {
+		panic(err)
+	}
+}
+
+// issueFileCommand is an internal-only helper that issues the command and
+// returns an error to make testing easier.
+func (c *Action) issueFileCommand(cmd *Command) (retErr error) {
 	e := strings.ReplaceAll(cmd.Name, "-", "_")
 	e = strings.ToUpper(e)
 	e = "GITHUB_" + e
@@ -127,17 +132,26 @@ func (c *Action) IssueFileCommand(cmd *Command) error {
 	msg := []byte(cmd.Message + EOF)
 	f, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf(errFileCmdFmt, err)
+		retErr = fmt.Errorf(errFileCmdFmt, err)
+		return
 	}
-	defer f.Close()
+
+	defer func() {
+		if err := f.Close(); err != nil && retErr == nil {
+			retErr = err
+		}
+	}()
+
 	if _, err := f.Write(msg); err != nil {
-		return fmt.Errorf(errFileCmdFmt, err)
+		retErr = fmt.Errorf(errFileCmdFmt, err)
+		return
 	}
-	return nil
+	return
 }
 
 // AddMask adds a new field mask for the given string "p". After called, future
-// attempts to log "p" will be replaced with "***" in log output.
+// attempts to log "p" will be replaced with "***" in log output. It panics if
+// it cannot write to the output stream.
 func (c *Action) AddMask(p string) {
 	// ::add-mask::<p>
 	c.IssueCommand(&Command{
@@ -146,7 +160,8 @@ func (c *Action) AddMask(p string) {
 	})
 }
 
-// AddMatcher adds a new matcher with the given file path.
+// AddMatcher adds a new matcher with the given file path. It panics if it
+// cannot write to the output stream.
 func (c *Action) AddMatcher(p string) {
 	// ::add-matcher::<p>
 	c.IssueCommand(&Command{
@@ -155,7 +170,8 @@ func (c *Action) AddMatcher(p string) {
 	})
 }
 
-// RemoveMatcher removes a matcher with the given owner name.
+// RemoveMatcher removes a matcher with the given owner name. It panics if it
+// cannot write to the output stream.
 func (c *Action) RemoveMatcher(o string) {
 	// ::remove-matcher owner=<o>::
 	c.IssueCommand(&Command{
@@ -166,30 +182,20 @@ func (c *Action) RemoveMatcher(o string) {
 	})
 }
 
-// AddPath adds the string "p" to the path for the invocation. It attempts to
-// issue a file command at first. If that fails, it falls back to the regular
-// (now deprecated) 'add-path' command, which may stop working in the future.
-// The deprecated fallback may be useful for users running an older version of
-// GitHub runner.
+// AddPath adds the string "p" to the path for the invocation. It panics if it
+// cannot write to the output file.
 //
 // https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-commands-for-github-actions#adding-a-system-path
 // https://github.blog/changelog/2020-10-01-github-actions-deprecating-set-env-and-add-path-commands/
 func (c *Action) AddPath(p string) {
-	err := c.IssueFileCommand(&Command{
+	c.IssueFileCommand(&Command{
 		Name:    pathCmd,
 		Message: p,
 	})
-
-	if err != nil { // use regular command as fallback
-		// ::add-path::<p>
-		c.IssueCommand(&Command{
-			Name:    addPathCmd,
-			Message: p,
-		})
-	}
 }
 
-// SaveState saves state to be used in the "finally" post job entry point.
+// SaveState saves state to be used in the "finally" post job entry point. It
+// panics if it cannot write to the output stream.
 func (c *Action) SaveState(k, v string) {
 	// ::save-state name=<k>::<v>
 	c.IssueCommand(&Command{
@@ -201,7 +207,8 @@ func (c *Action) SaveState(k, v string) {
 	})
 }
 
-// GetInput gets the input by the given name.
+// GetInput gets the input by the given name. It returns the empty string if the
+// input is not defined.
 func (c *Action) GetInput(i string) string {
 	e := strings.ReplaceAll(i, " ", "_")
 	e = strings.ToUpper(e)
@@ -209,7 +216,8 @@ func (c *Action) GetInput(i string) string {
 	return strings.TrimSpace(c.getenv(e))
 }
 
-// Group starts a new collapsable region up to the next ungroup invocation.
+// Group starts a new collapsable region up to the next ungroup invocation. It
+// panics if it cannot write to the output stream.
 func (c *Action) Group(t string) {
 	// ::group::<t>
 	c.IssueCommand(&Command{
@@ -218,7 +226,8 @@ func (c *Action) Group(t string) {
 	})
 }
 
-// EndGroup ends the current group.
+// EndGroup ends the current group. It panics if it cannot write to the output
+// stream.
 func (c *Action) EndGroup() {
 	// ::endgroup::
 	c.IssueCommand(&Command{
@@ -226,32 +235,52 @@ func (c *Action) EndGroup() {
 	})
 }
 
-// SetEnv sets an environment variable. It attempts to issue a file command at
-// first. If that fails, it falls back to the regular (now deprecated) 'set-env'
-// command, which may stop working in the future. The deprecated fallback may be
-// useful for users running an older version of GitHub runner.
+// AddStepSummary writes the given markdown to the job summary. If a job summary
+// already exists, this value is appended.
+//
+// https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary
+// https://github.blog/2022-05-09-supercharging-github-actions-with-job-summaries/
+func (c *Action) AddStepSummary(markdown string) {
+	c.IssueFileCommand(&Command{
+		Name:    stepSummaryCmd,
+		Message: markdown,
+	})
+}
+
+// AddStepSummaryTemplate adds a summary template by parsing the given Go
+// template using html/template with the given input data. See AddStepSummary
+// for caveats.
+//
+// This primarily exists as a convenience function that renders a template.
+func (c *Action) AddStepSummaryTemplate(tmpl string, data any) error {
+	t, err := template.New("").Parse(tmpl)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var b bytes.Buffer
+	if err := t.Execute(&b, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	c.AddStepSummary(b.String())
+	return nil
+}
+
+// SetEnv sets an environment variable. It panics if it cannot write to the
+// output file.
 //
 // https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable
 // https://github.blog/changelog/2020-10-01-github-actions-deprecating-set-env-and-add-path-commands/
 func (c *Action) SetEnv(k, v string) {
-	err := c.IssueFileCommand(&Command{
+	c.IssueFileCommand(&Command{
 		Name:    envCmd,
 		Message: fmt.Sprintf(envCmdMsgFmt, k, envCmdDelimiter, v, envCmdDelimiter),
 	})
-
-	if err != nil { // use regular command as fallback
-		// ::set-env name=<k>::<v>
-		c.IssueCommand(&Command{
-			Name:    setEnvCmd,
-			Message: v,
-			Properties: CommandProperties{
-				"name": k,
-			},
-		})
-	}
 }
 
-// SetOutput sets an output parameter.
+// SetOutput sets an output parameter. It panics if it cannot write to the
+// output stream.
 func (c *Action) SetOutput(k, v string) {
 	// ::set-output name=<k>::<v>
 	c.IssueCommand(&Command{
@@ -264,8 +293,9 @@ func (c *Action) SetOutput(k, v string) {
 }
 
 // Debugf prints a debug-level message. It follows the standard fmt.Printf
-// arguments, appending an OS-specific line break to the end of the message.
-func (c *Action) Debugf(msg string, args ...interface{}) {
+// arguments, appending an OS-specific line break to the end of the message. It
+// panics if it cannot write to the output stream.
+func (c *Action) Debugf(msg string, args ...any) {
 	// ::debug <c.fields>::<msg, args>
 	c.IssueCommand(&Command{
 		Name:       debugCmd,
@@ -275,8 +305,9 @@ func (c *Action) Debugf(msg string, args ...interface{}) {
 }
 
 // Noticef prints a notice-level message. It follows the standard fmt.Printf
-// arguments, appending an OS-specific line break to the end of the message.
-func (c *Action) Noticef(msg string, args ...interface{}) {
+// arguments, appending an OS-specific line break to the end of the message. It
+// panics if it cannot write to the output stream.
+func (c *Action) Noticef(msg string, args ...any) {
 	// ::notice <c.fields>::<msg, args>
 	c.IssueCommand(&Command{
 		Name:       noticeCmd,
@@ -286,8 +317,9 @@ func (c *Action) Noticef(msg string, args ...interface{}) {
 }
 
 // Warningf prints a warning-level message. It follows the standard fmt.Printf
-// arguments, appending an OS-specific line break to the end of the message.
-func (c *Action) Warningf(msg string, args ...interface{}) {
+// arguments, appending an OS-specific line break to the end of the message. It
+// panics if it cannot write to the output stream.
+func (c *Action) Warningf(msg string, args ...any) {
 	// ::warning <c.fields>::<msg, args>
 	c.IssueCommand(&Command{
 		Name:       warningCmd,
@@ -297,8 +329,9 @@ func (c *Action) Warningf(msg string, args ...interface{}) {
 }
 
 // Errorf prints a error-level message. It follows the standard fmt.Printf
-// arguments, appending an OS-specific line break to the end of the message.
-func (c *Action) Errorf(msg string, args ...interface{}) {
+// arguments, appending an OS-specific line break to the end of the message. It
+// panics if it cannot write to the output stream.
+func (c *Action) Errorf(msg string, args ...any) {
 	// ::error <c.fields>::<msg, args>
 	c.IssueCommand(&Command{
 		Name:       errorCmd,
@@ -309,15 +342,18 @@ func (c *Action) Errorf(msg string, args ...interface{}) {
 
 // Fatalf prints a error-level message and exits. This is equivalent to Errorf
 // followed by os.Exit(1).
-func (c *Action) Fatalf(msg string, args ...interface{}) {
+func (c *Action) Fatalf(msg string, args ...any) {
 	c.Errorf(msg, args...)
 	osExit(1)
 }
 
-// Infof prints message to stdout without any level annotations. It follows the standard fmt.Printf
-// arguments, appending an OS-specific line break to the end of the message.
-func (c *Action) Infof(msg string, args ...interface{}) {
-	fmt.Fprintf(c.w, msg+EOF, args...)
+// Infof prints message to stdout without any level annotations. It follows the
+// standard fmt.Printf arguments, appending an OS-specific line break to the end
+// of the message. It panics if it cannot write to the output stream.
+func (c *Action) Infof(msg string, args ...any) {
+	if _, err := fmt.Fprintf(c.w, msg+EOF, args...); err != nil {
+		panic(fmt.Errorf("failed to write info command: %w", err))
+	}
 }
 
 // WithFieldsSlice includes the provided fields in log output. "f" must be a
@@ -389,7 +425,7 @@ func (c *Action) GetIDToken(ctx context.Context, audience string) (string, error
 
 	// This has moved to the io package in Go 1.16, but we still support up to Go
 	// 1.13 for now.
-	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 64*1000))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1000))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -415,3 +451,64 @@ func (c *Action) Getenv(key string) string {
 // GetenvFunc is an abstraction to make tests feasible for commands that
 // interact with environment variables.
 type GetenvFunc func(key string) string
+
+// GitHubContext of current workflow.
+//
+// Replicated from https://github.com/actions/toolkit/blob/main/packages/github/src/context.ts
+type GitHubContext struct {
+	EventPath  string `env:"GITHUB_EVENT_PATH"`
+	EventName  string `env:"GITHUB_EVENT_NAME"`
+	SHA        string `env:"GITHUB_SHA"`
+	Ref        string `env:"GITHUB_REF"`
+	Workflow   string `env:"GITHUB_WORKFLOW"`
+	Action     string `env:"GITHUB_ACTION"`
+	Actor      string `env:"GITHUB_ACTOR"`
+	Job        string `env:"GITHUB_JOB"`
+	RunNumber  int64  `env:"GITHUB_RUN_NUMBER"`
+	RunID      int64  `env:"GITHUB_RUN_ID"`
+	APIURL     string `env:"GITHUB_API_URL,default=https://api.github.com"`
+	ServerURL  string `env:"GITHUB_SERVER_URL,default=https://github.com"`
+	GraphqlURL string `env:"GITHUB_GRAPHQL_URL,default=https://api.github.com/graphql"`
+
+	// Event is populated by parsing the file at EventPath, if it exists.
+	Event map[string]any
+}
+
+// Context returns the context of current action with the payload object
+// that triggered the workflow
+func (c *Action) Context() (*GitHubContext, error) {
+	ctx := context.Background()
+	lookuper := &wrappedLookuper{f: c.getenv}
+
+	var githubContext GitHubContext
+	if err := envconfig.ProcessWith(ctx, &githubContext, lookuper); err != nil {
+		return nil, fmt.Errorf("could not process github context variables: %w", err)
+	}
+
+	if githubContext.EventPath != "" {
+		eventData, err := os.ReadFile(githubContext.EventPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("could not read event file: %w", err)
+		}
+		if eventData != nil {
+			if err := json.Unmarshal(eventData, &githubContext.Event); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal event payload: %w", err)
+			}
+		}
+	}
+
+	return &githubContext, nil
+}
+
+// wrappedLookuper creates a lookuper that wraps a given getenv func.
+type wrappedLookuper struct {
+	f GetenvFunc
+}
+
+// Lookup implements a custom lookuper.
+func (w *wrappedLookuper) Lookup(key string) (string, bool) {
+	if v := w.f(key); v != "" {
+		return v, true
+	}
+	return "", false
+}

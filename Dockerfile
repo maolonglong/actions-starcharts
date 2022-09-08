@@ -1,10 +1,17 @@
-FROM golang:1.17
+FROM golang:1.19-alpine3.16 AS build-env
 
-WORKDIR /src
+ENV GO111MODULE=on \
+    CGO_ENABLED=0 \
+    GOPROXY=https://proxy.golang.org
+
+WORKDIR /go/src/github.com/maolonglong/actions-starcharts
 COPY . .
 
-ENV GO111MODULE=on
+RUN go build -o /bin/action -trimpath -buildvcs=false -ldflags="-s -w" .
 
-RUN go build -o /bin/action
+FROM scratch
+
+COPY --from=build-env /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build-env /bin/action /bin/action
 
 ENTRYPOINT ["/bin/action"]
