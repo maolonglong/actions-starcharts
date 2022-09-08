@@ -6,38 +6,19 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/sethvargo/go-githubactions"
-	"github.com/spf13/cast"
 )
 
-func getSHA() string {
-	s := os.Getenv("GITHUB_SHA")
-	if s == "" {
-		githubactions.Fatalf("failed to get SHA")
-	}
-	return s
-}
-
-func getRepo() (string, string) {
-	a := strings.SplitN(os.Getenv("GITHUB_REPOSITORY"), "/", 2)
-	if len(a) != 2 || a[0] == "" || a[1] == "" {
-		githubactions.Fatalf("failed to get repo")
-	}
-	return a[0], a[1]
-}
-
-func abs(a int) int {
-	if a < 0 {
-		return -a
-	}
-	return a
-}
-
 func main() {
+	ghCtx, err := githubactions.Context()
+	if err != nil {
+		githubactions.Fatalf("get github context failed")
+	}
+	sha := ghCtx.SHA
 	owner, name := getRepo()
-	sha := getSHA()
 
 	token := githubactions.GetInput("github_token")
 	if token == "" {
@@ -54,8 +35,8 @@ func main() {
 		commitMessage = "chore: update starcharts [skip ci]"
 	}
 
-	starsChange := cast.ToInt(githubactions.GetInput("stars_change"))
-	if starsChange < 1 {
+	starsChange, err := strconv.Atoi(githubactions.GetInput("stars_change"))
+	if err != nil || starsChange < 1 {
 		starsChange = 1
 	}
 
