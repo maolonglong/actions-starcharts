@@ -186,8 +186,8 @@ func PrefixLookuper(prefix string, l Lookuper) Lookuper {
 }
 
 type prefixLookuper struct {
-	prefix string
 	l      Lookuper
+	prefix string
 }
 
 func (p *prefixLookuper) Lookup(key string) (string, bool) {
@@ -222,11 +222,11 @@ type MutatorFunc func(ctx context.Context, k, v string) (string, error)
 type options struct {
 	Default   string
 	Delimiter string
+	Prefix    string
+	Separator string
 	NoInit    bool
 	Overwrite bool
-	Prefix    string
 	Required  bool
-	Separator string
 }
 
 // Process processes the struct using the environment. See ProcessWith for a
@@ -238,6 +238,12 @@ func Process(ctx context.Context, i interface{}) error {
 // ProcessWith processes the given interface with the given lookuper. See the
 // package-level documentation for specific examples and behaviors.
 func ProcessWith(ctx context.Context, i interface{}, l Lookuper, fns ...MutatorFunc) error {
+	return processWith(ctx, i, l, false, fns...)
+}
+
+// processWith is a helper that captures whether the parent wanted
+// initialization.
+func processWith(ctx context.Context, i interface{}, l Lookuper, parentNoInit bool, fns ...MutatorFunc) error {
 	if l == nil {
 		return ErrLookuperNil
 	}
@@ -286,11 +292,11 @@ func ProcessWith(ctx context.Context, i interface{}, l Lookuper, fns ...MutatorF
 			origin := e.Field(i)
 			if isNilStructPtr {
 				empty := reflect.New(origin.Type().Elem()).Interface()
-				// If a struct (after traversal) equals to the empty value,
-				// it means nothing was changed in any sub-fields.
-				// With the noinit opt, we skip setting the empty value
-				// to the original struct pointer (aka. keep it nil).
-				if !reflect.DeepEqual(v.Interface(), empty) || !opts.NoInit {
+				// If a struct (after traversal) equals to the empty value, it means
+				// nothing was changed in any sub-fields. With the noinit opt, we skip
+				// setting the empty value to the original struct pointer (aka. keep it
+				// nil).
+				if !reflect.DeepEqual(v.Interface(), empty) || (!opts.NoInit && !parentNoInit) {
 					origin.Set(v)
 				}
 			}
@@ -324,18 +330,20 @@ func ProcessWith(ctx context.Context, i interface{}, l Lookuper, fns ...MutatorF
 			// Lookup the value, ignoring an error if the key isn't defined. This is
 			// required for nested structs that don't declare their own `env` keys,
 			// but have internal fields with an `env` defined.
-			val, err := lookup(key, opts, l)
+			val, found, usedDefault, err := lookup(key, opts, l)
 			if err != nil && !errors.Is(err, ErrMissingKey) {
 				return fmt.Errorf("%s: %w", tf.Name, err)
 			}
 
-			if ok, err := processAsDecoder(val, ef); ok {
-				if err != nil {
-					return err
-				}
+			if found || usedDefault {
+				if ok, err := processAsDecoder(val, ef); ok {
+					if err != nil {
+						return err
+					}
 
-				setNilStruct(ef)
-				continue
+					setNilStruct(ef)
+					continue
+				}
 			}
 
 			plu := l
@@ -343,7 +351,7 @@ func ProcessWith(ctx context.Context, i interface{}, l Lookuper, fns ...MutatorF
 				plu = PrefixLookuper(opts.Prefix, l)
 			}
 
-			if err := ProcessWith(ctx, ef.Interface(), plu, fns...); err != nil {
+			if err := processWith(ctx, ef.Interface(), plu, opts.NoInit, fns...); err != nil {
 				return fmt.Errorf("%s: %w", tf.Name, err)
 			}
 
@@ -362,23 +370,34 @@ func ProcessWith(ctx context.Context, i interface{}, l Lookuper, fns ...MutatorF
 			continue
 		}
 
-		// The field already has a non-zero value and overwrite is false, do not overwrite.
+		// The field already has a non-zero value and overwrite is false, do not
+		// overwrite.
 		if !ef.IsZero() && !opts.Overwrite {
 			continue
 		}
 
-		val, err := lookup(key, opts, l)
+		val, found, usedDefault, err := lookup(key, opts, l)
 		if err != nil {
 			return fmt.Errorf("%s: %w", tf.Name, err)
 		}
 
+		// If the field already has a non-zero value and there was no value directly
+		// specified, do not overwrite the existing field. We only want to overwrite
+		// when the envvar was provided directly.
+		if !ef.IsZero() && !found {
+			continue
+		}
+
 		// Apply any mutators. Mutators are applied after the lookup, but before any
-		// type conversions. They always resolve to a string (or error)
-		for _, fn := range fns {
-			if fn != nil {
-				val, err = fn(ctx, key, val)
-				if err != nil {
-					return fmt.Errorf("%s: %w", tf.Name, err)
+		// type conversions. They always resolve to a string (or error), so we don't
+		// call mutators when the environment variable was not set.
+		if found || usedDefault {
+			for _, fn := range fns {
+				if fn != nil {
+					val, err = fn(ctx, key, val)
+					if err != nil {
+						return fmt.Errorf("%s: %w", tf.Name, err)
+					}
 				}
 			}
 		}
@@ -394,7 +413,7 @@ func ProcessWith(ctx context.Context, i interface{}, l Lookuper, fns ...MutatorF
 		}
 
 		// Set value.
-		if err := processField(val, ef, opts.Delimiter, opts.Separator); err != nil {
+		if err := processField(val, ef, opts.Delimiter, opts.Separator, opts.NoInit); err != nil {
 			return fmt.Errorf("%s(%q): %w", tf.Name, val, err)
 		}
 	}
@@ -444,29 +463,32 @@ LOOP:
 	return key, &opts, nil
 }
 
-// lookup looks up the given key using the provided Lookuper and options.
-func lookup(key string, opts *options, l Lookuper) (string, error) {
+// lookup looks up the given key using the provided Lookuper and options. The
+// first boolean parameter indicates whether the value was found in the
+// lookuper. The second boolean parameter indicates whether the default value
+// was used.
+func lookup(key string, opts *options, l Lookuper) (string, bool, bool, error) {
 	if key == "" {
 		// The struct has something like `env:",required"`, which is likely a
 		// mistake. We could try to infer the envvar from the field name, but that
 		// feels too magical.
-		return "", ErrMissingKey
+		return "", false, false, ErrMissingKey
 	}
 
 	if opts.Required && opts.Default != "" {
 		// Having a default value on a required value doesn't make sense.
-		return "", ErrRequiredAndDefault
+		return "", false, false, ErrRequiredAndDefault
 	}
 
 	// Lookup value.
-	val, ok := l.Lookup(key)
-	if !ok {
+	val, found := l.Lookup(key)
+	if !found {
 		if opts.Required {
 			if pl, ok := l.(*prefixLookuper); ok {
 				key = pl.prefix + key
 			}
 
-			return "", fmt.Errorf("%w: %s", ErrMissingRequired, key)
+			return "", false, false, fmt.Errorf("%w: %s", ErrMissingRequired, key)
 		}
 
 		if opts.Default != "" {
@@ -479,10 +501,12 @@ func lookup(key string, opts *options, l Lookuper) (string, error) {
 				}
 				return ""
 			})
+
+			return val, false, true, nil
 		}
 	}
 
-	return val, nil
+	return val, found, false, nil
 }
 
 // processAsDecoder processes the given value as a decoder or custom
@@ -512,6 +536,20 @@ func processAsDecoder(v string, ef reflect.Value) (bool, error) {
 			return imp, err
 		}
 
+		if tu, ok := iface.(encoding.TextUnmarshaler); ok {
+			imp = true
+			if err = tu.UnmarshalText([]byte(v)); err == nil {
+				return imp, nil
+			}
+		}
+
+		if tu, ok := iface.(json.Unmarshaler); ok {
+			imp = true
+			if err = tu.UnmarshalJSON([]byte(v)); err == nil {
+				return imp, nil
+			}
+		}
+
 		if tu, ok := iface.(encoding.BinaryUnmarshaler); ok {
 			imp = true
 			if err = tu.UnmarshalBinary([]byte(v)); err == nil {
@@ -525,26 +563,17 @@ func processAsDecoder(v string, ef reflect.Value) (bool, error) {
 				return imp, nil
 			}
 		}
-
-		if tu, ok := iface.(json.Unmarshaler); ok {
-			imp = true
-			if err = tu.UnmarshalJSON([]byte(v)); err == nil {
-				return imp, nil
-			}
-		}
-
-		if tu, ok := iface.(encoding.TextUnmarshaler); ok {
-			imp = true
-			if err = tu.UnmarshalText([]byte(v)); err == nil {
-				return imp, nil
-			}
-		}
 	}
 
 	return imp, err
 }
 
-func processField(v string, ef reflect.Value, delimiter, separator string) error {
+func processField(v string, ef reflect.Value, delimiter, separator string, noInit bool) error {
+	// If the input value is empty and initialization is skipped, do nothing.
+	if v == "" && noInit {
+		return nil
+	}
+
 	// Handle pointers and uninitialized pointers.
 	for ef.Type().Kind() == reflect.Ptr {
 		if ef.IsNil() {
@@ -627,12 +656,12 @@ func processField(v string, ef reflect.Value, delimiter, separator string) error
 			mKey, mVal := strings.TrimSpace(pair[0]), strings.TrimSpace(pair[1])
 
 			k := reflect.New(tf.Key()).Elem()
-			if err := processField(mKey, k, delimiter, separator); err != nil {
+			if err := processField(mKey, k, delimiter, separator, noInit); err != nil {
 				return fmt.Errorf("%s: %w", mKey, err)
 			}
 
 			v := reflect.New(tf.Elem()).Elem()
-			if err := processField(mVal, v, delimiter, separator); err != nil {
+			if err := processField(mVal, v, delimiter, separator, noInit); err != nil {
 				return fmt.Errorf("%s: %w", mVal, err)
 			}
 
@@ -650,7 +679,7 @@ func processField(v string, ef reflect.Value, delimiter, separator string) error
 			s := reflect.MakeSlice(tf, len(vals), len(vals))
 			for i, val := range vals {
 				val = strings.TrimSpace(val)
-				if err := processField(val, s.Index(i), delimiter, separator); err != nil {
+				if err := processField(val, s.Index(i), delimiter, separator, noInit); err != nil {
 					return fmt.Errorf("%s: %w", val, err)
 				}
 			}
